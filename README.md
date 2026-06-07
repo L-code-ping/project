@@ -4,7 +4,7 @@
 
 ## 🎬 Demo 视频
 
-[观看演示视频](https://member.bilibili.com/platform/upload-manager/article)
+[AI小说转剧本 - B站视频](https://www.bilibili.com/video/BV1dmE864EgS/?vd_source=85e6fc2208d8304404e8f392cc43e66c)
 
 ## 技术栈
 
