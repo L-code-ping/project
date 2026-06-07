@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}历史记录{% endblock %}
+{% block content %}
+<style>
+    .history-container { max-width: 800px; margin: 0 auto; }
+    .record { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }
+    .record-title { font-size: 18px; font-weight: bold; color: #34495e; }
+    .record-time { color: #7f8c8d; font-size: 14px; margin-top: 5px; }
+    .empty { color: #e74c3c; text-align: center; padding: 40px; }
+</style>
+
+<div class="history-container">
+    <h2>我的转换记录</h2>
+    <p style="color:#666;">共有 {{ conversions|length }} 条记录</p>
+
+    {% if conversions %}
+        {% for conv in conversions %}
+        <div class="record">
+            <div class="record-title">{{ conv.title }}</div>
+            <div class="record-time">{{ conv.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            <a href="#" onclick="viewYAML('{{ conv.output_yaml | e }}')">查看YAML</a>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty">
+            <p>暂无记录</p>
+            <p>请先进行转换操作</p>
+        </div>
+    {% endif %}
+
+    <a href="/">返回转换页面</a>
+</div>
+
+<script>
+function viewYAML(yamlText) {
+    const win = window.open("", "_blank", "width=800,height=600");
+    win.document.write("<pre>" + yamlText + "</pre>");
+}
+</script>
+{% endblock %}

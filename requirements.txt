@@ -1,0 +1,8 @@
+flask>=2.0
+openai>=1.0
+pyyaml>=6.0
+python-dotenv>=1.0
+flask-login>=0.6
+flask-sqlalchemy>=3.0
+flask-bcrypt>=1.0
+werkzeug>=2.0

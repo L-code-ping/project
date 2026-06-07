@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}转换器{% endblock %}
+{% block content %}
+
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    .container { max-width: 1100px; width: 100%; margin: 20px auto; }
+    h1 { text-align: center; margin-bottom: 20px; color: #2c3e50; }
+    .panel { display: flex; gap: 20px; flex-wrap: wrap; }
+    .left, .right { flex: 1; min-width: 300px; }
+    textarea { width: 100%; height: 400px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; resize: vertical; font-size: 14px; line-height: 1.6; }
+    .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; background: #3498db; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+    .btn:hover { background: #2980b9; }
+    .btn:disabled { background: #95a5a6; cursor: not-allowed; }
+    .output-actions { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .output-actions button { padding: 8px 14px; border: 1px solid #ccc; border-radius: 5px; background: white; cursor: pointer; font-size: 13px; }
+    .output-actions button:hover { background: #ecf0f1; }
+    .output-actions button.active { background: #3498db; color: white; border-color: #3498db; }
+    pre { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 500px; overflow-y: auto; font-size: 13px; line-height: 1.5; }
+    .error { color: #e74c3c; margin-top: 10px; }
+    .loading { text-align: center; color: #7f8c8d; margin-top: 10px; display: none; }
+    .file-upload { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #uploadLabel { cursor: pointer; color: #3498db; text-decoration: underline; }
+    #fileInput { display: none; }
+    .btn-small { padding: 6px 14px; border: 1px solid #bdc3c7; border-radius: 5px; background: #ecf0f1; color: #2c3e50; cursor: pointer; font-size: 13px; }
+    .btn-small:hover { background: #d5dbdb; }
+
+    /* 预览样式 */
+    .preview-box { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; max-height: 500px; overflow-y: auto; font-family: "Courier New", monospace; line-height: 1.8; display: none; }
+    .preview-box .scene-title { font-weight: bold; margin-top: 20px; margin-bottom: 5px; font-size: 15px; color: #2c3e50; }
+    .preview-box .scene-location { color: #7f8c8d; font-size: 13px; margin-bottom: 10px; }
+    .preview-box .action { margin: 5px 0; color: #34495e; }
+    .preview-box .dialogue { margin: 5px 0 5px 20px; }
+    .preview-box .speaker { font-weight: bold; color: #e67e22; }
+    .preview-box .emotion { color: #7f8c8d; font-style: italic; }
+
+    /* 统计样式 */
+    .stats-box { background: #f0f3f5; border-radius: 8px; padding: 12px 16px; margin-top: 15px; display: none; font-size: 14px; }
+    .stats-box h4 { margin-bottom: 8px; color: #2c3e50; }
+    .stats-box .stat-item { display: inline-block; margin-right: 20px; color: #555; }
+    .stats-box .stat-value { font-weight: bold; color: #2c3e50; }
+</style>
+
+<div class="container">
+    <h1>📖 小说 → 🎬 剧本转换器</h1>
+    <div class="panel">
+        <div class="left">
+            <h3>输入小说文本</h3>
+            <div class="file-upload">
+                <span id="uploadLabel" onclick="document.getElementById('fileInput').click()">📁 上传 .txt 文件</span>
+                <input type="file" id="fileInput" accept=".txt" onchange="loadFile(event)">
+                <button class="btn-small" onclick="loadSample()">📥 加载示例文本</button>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label for="titleInput" style="display: block; margin-bottom: 4px; color: #555;">作品标题（可选）</label>
+                <input type="text" id="titleInput" placeholder="输入作品标题，如：深夜来电" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px;">
+            </div>
+            <textarea id="novelInput" placeholder="在此粘贴小说内容，或上传 .txt 文件，或点击「加载示例文本」..."></textarea>
+            <button class="btn" id="convertBtn" onclick="convert()">🔄 转换为剧本 YAML</button>
+            <div class="loading" id="loading">⏳ 正在转换，请稍候...</div>
+            <div class="error" id="errorMsg"></div>
+        </div>
+        <div class="right">
+            <h3>转换结果</h3>
+            <div class="output-actions">
+                <button id="btnSource" class="active" onclick="switchView('source')">源码 (YAML)</button>
+                <button id="btnPreview" onclick="switchView('preview')">剧本预览</button>
+                <button onclick="copyYAML()">📋 复制</button>
+                <button onclick="downloadYAML()">⬇️ 下载 .yaml</button>
+            </div>
+            <pre id="output">等待转换...</pre>
+            <div id="previewBox" class="preview-box"></div>
+            <div id="statsBox" class="stats-box"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentYAML = '';
+    let currentParsed = null;
+    let currentView = 'source';
+
+    // 示例文本
+    const SAMPLE_TEXT = `林屿森推开急诊室的门，消毒水的气味扑面而来。凌晨三点的医院走廊安静得能听见日光灯管的电流声。
+
+"林医生！三号床的病人室颤了！"护士小跑着过来，声音里压着慌张。
+
+林屿森把咖啡杯扔进垃圾桶，快步走向抢救室。白色大褂的下摆扬起，口袋里掉出一支笔，他没回头捡。
+
+抢救室里，心电监护仪的报警声尖锐刺耳。病人的脸色灰白，嘴唇发绀。林屿森接过除颤仪的手柄，声音很稳："充电200焦，所有人离开床旁。"
+
+电流通过病人身体的瞬间，躯体弹起又落下。监护仪上的波形依旧杂乱。
+
+"再来一次。肾上腺素1毫克静推。"
+
+第二下电击后，波形终于恢复了规律的窦性心律。护士长长地呼出一口气，用袖子擦了擦额头的汗。
+
+林屿森把手柄放回除颤仪上，这时才注意到自己的手在微微发抖。
+
+他走出抢救室，在走廊的自动贩卖机前站了很久，最后买了一瓶冰水，贴在额头上。玻璃窗外的城市还在沉睡，路灯连成一条昏黄的光带。
+
+"林医生，急诊台有人找你。"值班护士走过来，"说是你妹妹。"
+
+林屿森转过身，看见苏念站在走廊尽头。她穿着高中校服，背着画板，头发被夜风吹得凌乱。
+
+"哥。"苏念的声音很轻。
+
+"凌晨三点你不在宿舍睡觉，跑这里来干什么？"林屿森的语气比预想中更生硬。
+
+"妈又发病了。爸送她来的，在楼下办住院。"苏念低头看着自己的帆布鞋，"我怕你忙完就直接回去了，所以上来告诉你。"
+
+林屿森沉默了几秒，把冰水递给她："你先去楼下找爸，我交接完就下去。"`;
+
+    function loadFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('novelInput').value = e.target.result;
+        };
+        reader.readAsText(file);
+    }
+
+    function loadSample() {
+        document.getElementById('novelInput').value = SAMPLE_TEXT;
+    }
+
+    function switchView(view) {
+        currentView = view;
+        document.getElementById('btnSource').classList.toggle('active', view === 'source');
+        document.getElementById('btnPreview').classList.toggle('active', view === 'preview');
+        
+        if (view === 'source') {
+            document.getElementById('output').style.display = 'block';
+            document.getElementById('previewBox').style.display = 'none';
+        } else {
+            document.getElementById('output').style.display = 'none';
+            document.getElementById('previewBox').style.display = 'block';
+            if (currentParsed) {
+                renderPreview(currentParsed);
+            }
+        }
+    }
+
+    function renderPreview(data) {
+        console.log('预览数据:', data);
+        let html = '';
+        if (data.meta) {
+            html += `<div style="text-align:center; margin-bottom:20px;">
+                <h3>《${data.meta.title || '未命名作品'}》</h3>
+                <p style="color:#7f8c8d;">改编自：${data.meta.adapted_from || ''} | 共 ${data.meta.total_scenes || 0} 场</p>
+            </div>`;
+        }
+        if (data.characters && data.characters.length > 0) {
+            html += `<div style="margin-bottom:15px;"><strong>登场人物：</strong>`;
+            html += data.characters.map(c => `${c.name}(${c.id})`).join('、');
+            html += `</div><hr>`;
+        }
+        if (data.acts) {
+            data.acts.forEach(act => {
+                html += `<div class="scene-title">第${act.act_number}幕：${act.title || ''}</div>`;
+                (act.scenes || []).forEach(scene => {
+                    html += `<div class="scene-title" style="margin-top:15px;">【场景${scene.scene_id}】${scene.location || '未知地点'} - ${scene.time || ''} (${scene.type || ''})</div>`;
+                    if (scene.description) {
+                        html += `<div class="action">△ ${scene.description}</div>`;
+                    }
+                    (scene.actions || []).forEach(actText => {
+                        html += `<div class="action">△ ${actText}</div>`;
+                    });
+                    (scene.dialogues || []).forEach(d => {
+                        let speakerName = d.speaker;
+                        if (data.characters) {
+                            const found = data.characters.find(c => c.id === d.speaker);
+                            if (found) speakerName = found.name;
+                        }
+                        html += `<div class="dialogue"><span class="speaker">${speakerName}</span>：${d.line}`;
+                        if (d.emotion) {
+                            html += ` <span class="emotion">（${d.emotion}）</span>`;
+                        }
+                        html += `</div>`;
+                    });
+                    if (scene.notes) {
+                        html += `<div class="action" style="color:#999;">【备注：${scene.notes}】</div>`;
+                    }
+                });
+            });
+        }
+        document.getElementById('previewBox').innerHTML = html || '<p>暂无预览内容</p>';
+    }
+
+    function renderStats(data) {
+        const statsBox = document.getElementById('statsBox');
+        if (!data || !data.acts) {
+            statsBox.style.display = 'none';
+            return;
+        }
+        statsBox.style.display = 'block';
+        
+        const scenes = [];
+        if (data.acts) {
+            data.acts.forEach(act => {
+                (act.scenes || []).forEach(s => scenes.push(s));
+            });
+        }
+        const totalScenes = scenes.length;
+        const totalChars = (data.characters || []).length;
+        
+        let totalDialogues = 0;
+        const speakerCount = {};
+        scenes.forEach(s => {
+            (s.dialogues || []).forEach(d => {
+                totalDialogues++;
+                const sp = d.speaker;
+                speakerCount[sp] = (speakerCount[sp] || 0) + 1;
+            });
+        });
+        
+        let topSpeaker = { id: null, count: 0 };
+        for (let [id, count] of Object.entries(speakerCount)) {
+            if (count > topSpeaker.count) topSpeaker = { id, count };
+        }
+        let topSpeakerName = topSpeaker.id;
+        const found = (data.characters || []).find(c => c.id === topSpeaker.id);
+        if (found) topSpeakerName = found.name;
+        
+        const typeCount = {};
+        scenes.forEach(s => {
+            const t = s.type || '未知';
+            typeCount[t] = (typeCount[t] || 0) + 1;
+        });
+        
+        let html = '<h4>📊 剧本统计</h4>';
+        html += `<span class="stat-item">总场次：<span class="stat-value">${totalScenes}</span></span>`;
+        html += `<span class="stat-item">出场角色：<span class="stat-value">${totalChars}人</span></span>`;
+        html += `<span class="stat-item">对白总数：<span class="stat-value">${totalDialogues}句</span></span>`;
+        if (topSpeaker.id) {
+            html += `<span class="stat-item">对白最多：<span class="stat-value">${topSpeakerName}（${topSpeaker.count}句）</span></span>`;
+        }
+        html += `<br><span class="stat-item">场景类型：</span>`;
+        for (let [type, cnt] of Object.entries(typeCount)) {
+            html += `<span class="stat-value">${type} ${cnt}</span> `;
+        }
+        
+        statsBox.innerHTML = html;
+    }
+
+    async function convert() {
+        const text = document.getElementById('novelInput').value.trim();
+        if (!text) {
+            document.getElementById('errorMsg').innerText = '请输入小说文本';
+            return;
+        }
+        document.getElementById('convertBtn').disabled = true;
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('errorMsg').innerText = '';
+        document.getElementById('output').innerText = '';
+        document.getElementById('previewBox').innerHTML = '';
+        document.getElementById('statsBox').style.display = 'none';
+
+        try {
+            const title = document.getElementById('titleInput').value.trim();
+            const res = await fetch('/convert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, title: title })
+            });
+            const data = await res.json();
+            console.log('后端返回数据:', data);
+            if (data.error) {
+                document.getElementById('errorMsg').innerText = data.error;
+                if (data.raw) {
+                    document.getElementById('output').innerText = '模型原始输出：\n' + data.raw;
+                }
+            } else {
+                currentYAML = data.yaml;
+                currentParsed = data.parsed;
+                document.getElementById('output').innerText = currentYAML;
+                if (currentView === 'preview') {
+                    renderPreview(currentParsed);
+                }
+                renderStats(currentParsed);
+            }
+        } catch (err) {
+            document.getElementById('errorMsg').innerText = '网络错误：' + err.message;
+        } finally {
+            document.getElementById('convertBtn').disabled = false;
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+
+    function copyYAML() {
+        if (!currentYAML) return;
+        navigator.clipboard.writeText(currentYAML).then(() => alert('已复制到剪贴板'));
+    }
+
+    function downloadYAML() {
+        if (!currentYAML) return;
+        const blob = new Blob([currentYAML], { type: 'application/x-yaml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'script.yaml';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
+
+{% endblock %}
